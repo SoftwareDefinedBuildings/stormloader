@@ -493,7 +493,7 @@ def act_register(args):
         print "Could not find key in user's default gpg keyring"
         sys.exit(1)
     key = out
-    r = requests.post("http://127.0.0.1:6543/register", data=json.dumps({
+    r = requests.post("http://cloud.storm.rocks/register", data=json.dumps({
         "namespace":args["namespace"],
         "email":args["email"],
         "key":base64.b64encode(key)
@@ -521,7 +521,7 @@ def act_publish(args):
                    "namespace":namespace,
                    "name":name,
                    "sdb":base64.b64encode(sdbf.read())}
-            r = requests.post("http://127.0.0.1:6543/publish",data=json.dumps(req))
+            r = requests.post("http://cloud.storm.rocks/publish",data=json.dumps(req))
             rv = json.loads(r.text)
             if rv["status"] != "success":
                 print "Failed to publish:",rv["message"]
@@ -537,7 +537,7 @@ def act_cloudflash(args):
     if args["verbose"]:
         print "Downloading image ",
         sys.stdout.flush()
-    r = requests.get("http://127.0.0.1:6543/r/"+imgl[0]+"/"+imgl[1])
+    r = requests.get("http://cloud.storm.rocks/r/"+imgl[0]+"/"+imgl[1])
     if args["verbose"]:
         print "done (%.3f seconds)" %(time.time() - ithen)
     if len(r.content) == 0:
