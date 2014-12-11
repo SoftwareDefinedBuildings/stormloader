@@ -2,12 +2,12 @@ from setuptools import setup
 setup(
   name = 'stormloader',
   packages = ['stormloader'],
-  version = '1.1',
+  version = '1.2',
   description = 'A utility for interacting with the Storm mote',
   author = 'Michael P Andersen',
   author_email = 'm.andersen@cs.berkeley.edu',
   url = 'https://github.com/SoftwareDefinedBuildings/stormloader',
-  download_url = 'https://github.com/SoftwareDefinedBuildings/stormloader/tarball/1.1',
+  download_url = 'https://github.com/SoftwareDefinedBuildings/stormloader/tarball/1.2',
   entry_points={
      'console_scripts': [
         'sload = stormloader.main:entry'

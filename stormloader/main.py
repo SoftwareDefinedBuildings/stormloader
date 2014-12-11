@@ -219,7 +219,8 @@ def act_delta(args):
 
     #We also permit an empty file to be specified as the old image
     #this represents null
-    if os.stat(args["oldimg"]).st_size == 0:
+
+    if not (os.path.exists(args["oldimg"]) and os.path.isfile(args["oldimg"])) or os.stat(args["oldimg"]).st_size == 0:
         if args["verbose"]:
             print "Old image is empty, doing full flash"
         full_flash()
@@ -232,8 +233,7 @@ def act_delta(args):
     actualcrc = sl.c_crcif(sl.FLASH_FLOOR, len(oldimg))
 
     if oldimgcrc != actualcrc:
-        if args["verbose"]:
-            print "Actual contents do not match old image"
+        print "Actual contents do not match expected image, this will take longer"
         full_flash()
         return
 
@@ -274,7 +274,7 @@ def act_delta(args):
                 sys.exit(1)
             elif args["verbose"]:
                 print "CRC pass"
-                print "Written and verified in %.2f seconds" % (time.time() - then)
+            print "Written and verified in %.2f seconds" % (time.time() - then)
             break
     else:
         raise sl.StormloaderException("Delta algorithm bug detected")
@@ -434,7 +434,7 @@ def act_gattr(args):
     sl.enter_bootload_mode()
     for i in range(16):
         k, val = sl.c_gattr(i, True)
-        print "%s => %s" % (k, repr(val))
+        print "%s => %s" % (k, " ".join("{:02x}".format(kk) for kk in val))
 
 def act_pack(args):
     args = loadconfigs(args, "pack")
