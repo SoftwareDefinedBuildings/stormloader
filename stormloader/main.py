@@ -578,7 +578,17 @@ def act_borderconfig(args):
 
     def _pack_ipv4_addr(addr):
         """packs IPv4 address e.g. 10.4.10.1 into a stringified uint32"""
-        return bytearray(map(int, addr.split("."))
+        return bytearray(map(int, addr.split(".")))
+
+    if args.sample:
+        print """[main]
+mesh-ip6-prefix=2001:470:4112:2::
+remote-tunnel-addr=10.4.10.3
+local-tunnel-addr=10.4.10.2
+local-netmask=255.255.255.0
+local-gateway-addr=10.4.10.1
+"""
+        sys.exit(0)
 
     # setup to write values
     sl = sl_api.StormLoader(args.tty)
@@ -715,7 +725,8 @@ def entry():
         help="Netmask of the border router's ipv4 network, e.g. 255.255.255.0")
     p_borderconfig.add_argument("-local-gateway-addr", default="", action="store",
         help="IPv4 address of the local gateway for the border router's ipv4 network, e.g. 10.4.10.1")
-    p_borderconfig.add_argument("-config", action="store", default="./borderrouter.ini", help="path to the .ini config file with key=val of the command line options for border config")
+    p_borderconfig.add_argument("-config", action="store", default=None, help="path to the .ini config file with key=val of the command line options for border config")
+    p_borderconfig.add_argument("-sample", action="store_true", default=False, help="Output a sample configuration file to stdout. Config is used for 'sload borderconfig -c <configfile.ini>'")
 
     args = parser.parse_args()
     args.func(args)
