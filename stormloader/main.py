@@ -782,6 +782,21 @@ local-gateway-addr=10.4.10.1
         print "Attributes loaded. Resetting..."
     sl.enter_payload_mode()
 
+def act_moteconfig(args):
+    # setup to write values
+    sl = sl_api.StormLoader(args.tty)
+    sl.enter_bootload_mode()
+    if args.verbose:
+        print "Loading [meshpfx] =", args.prefix
+    sl.c_sattr(2, "meshpfx", args.prefix)
+
+    router = "fe80::212:6d02:0:"+args.router
+    if args.verbose:
+        print "Loading [router addr] =",router
+    sl.c_sattr(7, "border", router)
+    sl.enter_payload_mode()
+
+
 def entry():
     parser = argparse.ArgumentParser(description="StormLoader tool")
     parser.add_argument("-D","--tty",action="store",default="/dev/ttyUSB0")
@@ -897,6 +912,14 @@ def entry():
         help="IPv4 address of the local gateway for the border router's ipv4 network, e.g. 10.4.10.1")
     p_borderconfig.add_argument("-config", action="store", default=None, help="path to the .ini config file with key=val of the command line options for border config")
     p_borderconfig.add_argument("-sample", action="store_true", default=False, help="Output a sample configuration file to stdout. Config is used for 'sload borderconfig -c <configfile.ini>'")
+
+    p_moteconfig = sp.add_parser("moteconfig", help="Configure networking for a non-border mote")
+    p_moteconfig.set_defaults(func=act_moteconfig)
+    p_moteconfig.add_argument("prefix", default=None, action="store",
+        help="IPv6 /64 prefix of the mesh network for this mote, e.g. 2001:470:1234:2::")
+    p_moteconfig.add_argument("router", default=None, action="store",
+        help="NodeID of the border router for this mote in a one-hop network, e.g. f00d")
+
 
     args = parser.parse_args()
     args.func(args)
