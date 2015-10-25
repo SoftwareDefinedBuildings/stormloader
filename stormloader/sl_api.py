@@ -34,6 +34,7 @@ CMD_CRCIF     = "\x15"
 CMD_CRCEF     = "\x16"
 CMD_XEPAGE    = "\x17"
 CMD_XFINIT    = "\x18"
+CMD_CLKOUT    = "\x19"
 
 RES_OVERFLOW  = "\x10"
 RES_PONG      = "\x11"
@@ -91,7 +92,6 @@ FLASH_FLOOR   = 65536
 FLASH_CEILING = 524287
 XFLASH_FLOOR   = 524288
 XFLASH_CEILING = 8388607
-
 class StormLoader(object):
 
     #Duplicated for ease of use
@@ -105,14 +105,14 @@ class StormLoader(object):
         self.serial_mode = None
         self.dev = None
         self.dev = pylibftdi.serial_device.SerialDevice() #TODO fix device id
-        self.dev.baudrate = 115200
+        self.dev.baudrate = 117200
         self.crcfunc = crcmod.mkCrcFun(0x104c11db7, initCrc=0, xorOut=0xFFFFFFFF)
 
     def _ser_serialmode(self):
         return
         if self.serial_mode != "serial":
             self.dev = pylibftdi.serial_device.SerialDevice() #TODO fix device id
-            self.dev.baudrate = 115200
+            self.dev.baudrate = 117200
             self.serial_mode = "serial"
 
     # def _ser_bbmode(self):
@@ -216,6 +216,10 @@ class StormLoader(object):
         rv = self.dev.read(80)
         return rv
 
+    def raw_write(self, content):
+        rv = self._ser_write(content)
+        return rv
+
     def c_ping(self, timeout=None):
         code, _ = self.do_cmd("", CMD_PING, 0, timeout=timeout)
         if code != RES_PONG:
@@ -247,6 +251,9 @@ class StormLoader(object):
         rv, _ = self.do_cmd(pkt, CMD_WPAGE, 0)
         if rv != RES_OK:
             raise BadnessException()
+
+    def c_clkout(self):
+        rv = self.do_cmd("", CMD_CLKOUT, 0)
 
     def c_xeblock(self, address):
         assert address % 2048 == 0
