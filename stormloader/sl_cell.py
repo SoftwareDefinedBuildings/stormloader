@@ -58,12 +58,14 @@ class SLCell(object):
         filemap = []
         floor = SLCell.FLASH_BASE
         for segment in f.iter_segments():
+            if len(segment.data()) == 0:
+                continue
             binaddr = segment["p_paddr"] - floor
             if binaddr < 0:
                 raise InvalidCellFileException("File contains addresses before payload area")
             end = binaddr + len(segment.data())
             if end >= SLCell.PAYLOAD_LENGTH:
-                raise InvalidCellFileException("File contains addresses after payload area")
+                raise InvalidCellFileException("File contains addresses after payload area: \nend = 0x%08x" % end)
             if end >= len(filemap):
                 filemap += ["\xFF"]*(end-len(filemap) + 1)
             for d in segment.data():
@@ -72,6 +74,19 @@ class SLCell(object):
         self._rawimage = "".join(filemap)
         #Here we would check for variants
         self._cellobj["variant_consts"] = []
+
+    def locate_symbol(self, name):
+        rf = cStringIO.StringIO(self.elfcontents)
+        f = ELFFile(rf)
+        symtab = f.get_section_by_name(".symtab")
+        if not symtab:
+            raise InvalidCellFileException("ELF has been stripped!")
+        sloc = None
+        for s in symtab.iter_symbols():
+            if s.name == name:
+                sloc = s.entry.st_value
+                break
+        return sloc
 
     def add_asset(self, address, name, isexternal, assetstr):
         lst = self._cellobj["eassets" if isexternal else "iassets"]

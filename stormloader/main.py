@@ -31,6 +31,7 @@ import base64
 import subprocess
 import json
 import tempfile
+import fcntl
 
 def loadconfigs(args, subsect):
     args = vars(args)
@@ -280,6 +281,157 @@ def act_delta(args):
         raise sl.StormloaderException("Delta algorithm bug detected")
     sl.enter_payload_mode()
 
+def act_calibrate(args):
+    args = loadconfigs(args, "calibrate")
+    coarse = args["coarse"]
+    fine = args["fine"]
+    try:
+        page = [0x69, 0xC0, 0xFF, 0xEE, 0x00, coarse, 0x00, fine] + ([0xFF]*(512-8))
+        sl = sl_api.StormLoader(args.get("tty", None))
+        sl.enter_bootload_mode()
+        sl.c_wpage(0xfe00, page)
+        sl.enter_payload_mode()
+    except sl_api.StormloaderException as e:
+        print "Fatal error:", e
+        sys.exit(1)
+
+def act_clkout(args):
+    sl = sl_api.StormLoader(args.get("tty", None))
+    sl.enter_bootload_mode()
+    sl.c_clkout()
+
+def act_program_kernel_payload(args):
+    try:
+        eximage = open(".cached_payload","r").read()
+    except:
+        eximage = None
+    try:
+        args = loadconfigs(args, "program")
+        params = {}
+        params["maintainer_name"] = "UNKNOWN"
+        params["repository_url"] ="UNKNOWN"
+        params["version"] = "UNKNOWN"
+        params["build_date"] = str(datetime.datetime.now())
+        params["changeset_id"] = "UNKNOWN"
+        params["description"] = "UNKNOWN"
+        params["short_name"] = "UNKNOWN"
+        params["tool_versions"] = []
+        cell = SLCell.generate(params, args["elf"])
+        img = cell.get_raw_image()[0x40000:] #was 0x4...
+
+        sl = sl_api.StormLoader(args.get("tty", None))
+        sl.enter_bootload_mode()
+        print "Probing payload ELF for entry point..."
+        _start = cell.locate_symbol("_start")
+        if _start != None:
+            print "Located _start at 0x%06x" % _start
+            print "Setting entrypoint attribute"
+            sl.c_sattr(1,"_start", [_start & 0xFF, (_start >> 8) & 0xFF, (_start >> 16) & 0xFF, (_start >> 24) & 0xFF ])
+        else:
+            print "Could not locate _start! This payload will not boot!"
+
+        def wfull():
+            print "Writing full payload..."
+            idx = 0
+            retries = 0
+            then = time.time()
+            while idx < len(img):
+                endslice = idx + 0x200
+                if endslice > len(img):
+                    endslice = len(img)
+                sl.write_extended_irange(0x50000 + idx, img[idx:endslice])
+                expected_crc = sl.crc32(img[idx:endslice])
+                written_crc = sl.c_crcif(0x50000 + idx, endslice-idx)
+                if (expected_crc != written_crc):
+                    #print ("expected page: ")
+                    a = (" ".join("%02x" % ord(c) for c in img[idx:endslice]))
+                    #print a
+                    rpage = sl.read_extended_irange(0x50000 + idx, 0x200)
+                    #print ("got page: ")
+                    b = (" ".join("%02x" % ord(c) for c in rpage))
+                    #print b
+                    print ("slice crc mismatch at 0x%x"%(0x50000 + idx))
+                    print "mismatches in bytes: ", [i/3 for i in xrange(len(b)) if a[i] != b[i]]
+                    #sl.c_epage(0x50000+idx)
+
+                    retries += 1
+                    if (retries == 5):
+                        print("hit max retries")
+                        print("aborting. please report")
+                        sys.exit(1)
+                else:
+                    retries = 0
+                    idx += 0x200
+            now = time.time()
+            expected_crc = sl.crc32(img)
+            written_crc = sl.c_crcif(0x50000, len(img))
+            print "Image is 0x%x bytes long" % (len(img))
+            if expected_crc != written_crc:
+                print "CRC failure: expected 0x%04x, got 0x%04x" % (expected_crc, written_crc)
+                sys.exit(1)
+            print "Wrote and verified %d bytes in %.3f seconds" %(len(img), now-then)
+
+        if eximage != None:
+            excrc = sl.crc32(eximage)
+            realcrc = sl.c_crcif(0x50000, len(eximage))
+            if excrc != realcrc:
+                print "Payload cached contents do not match (this will take longer)"
+                wfull()
+            else:
+                newimg = img
+                oldimg = eximage
+                if len(newimg) % 512 != 0:
+                        newimg += "\xFF"*(512 - (len(newimg)%512))
+
+                if len(oldimg) < len(newimg):
+                    old_end = len(oldimg) &~ 511
+                    start_address = (0x50000 + old_end)
+                    sl.write_extended_irange(start_address, newimg[old_end:])
+                    oldimg = oldimg[:old_end]
+                    oldimg += newimg[old_end:]
+
+                assert len(oldimg) >= len(newimg)
+
+                def fix_difference():
+                    for idx in xrange(len(newimg)):
+                        if oldimg[idx] != newimg[idx]:
+                            page_address = idx &~511
+                            real_address = page_address + 0x50000
+                            if args["verbose"]:
+                                print "Changed page at 0x%08x" % real_address
+                            sl.c_wpage(real_address, newimg[page_address:page_address+512])
+                           # oldimg[page_address:page_address+512] = newimg[page_address:page_address+512]
+                            newoldimg = oldimg[:page_address] + newimg[page_address:page_address+512] + \
+                                        oldimg[page_address + 512:]
+                            return (True, newoldimg)
+                    return (False, oldimg)
+
+                then = time.time()
+                for i in xrange(len(oldimg)+1):
+                    changes, oldimg = fix_difference()
+                    if not changes:
+                        expected_crc = sl.crc32(newimg)
+                        written_crc = sl.c_crcif(0x50000, len(newimg))
+                        if expected_crc != written_crc:
+                            print "CRC failure: expected 0x%04x, got 0x%04x" % (expected_crc, written_crc)
+                            sys.exit(1)
+                        elif args["verbose"]:
+                            print "CRC pass"
+                        print "Written and verified in %.2f seconds" % (time.time() - then)
+                        break
+                else:
+                    raise sl.StormloaderException("Delta algorithm bug detected")
+        else:
+            print "No cached contents (this will take longer)"
+            wfull()
+        with open(".cached_payload","w") as f:
+            f.write(img)
+
+        sl.enter_payload_mode()
+    except sl_api.StormloaderException as e:
+        print "Fatal error:", e
+        sys.exit(1)
+
 def act_flash_assets(args):
     try:
         args = loadconfigs(args, "assetflash")
@@ -322,16 +474,29 @@ def act_flash_assets(args):
 def act_tail(args):
     args = loadconfigs(args, "tail")
     sl = sl_api.StormLoader(args.get("tty", None))
+    io = args.get("interactive", False)
+    if io:
+        fd = sys.stdin.fileno()
+        fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+        fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
     if not args["noreset"]:
         sl.enter_payload_mode()
     print "[SLOADER] Attached"
     try:
         while True:
-
             c = sl.raw_read_noblock_buffer()
             if len(c) > 0:
                 sys.stdout.write(c)
                 sys.stdout.flush()
+            if io:
+                try:
+                    input = sys.stdin.read()
+                    if len(input) > 0:
+                        sl.raw_write(input)
+                except IOError:
+                    pass
+
+
     except KeyboardInterrupt:
         sys.exit(0)
 
@@ -587,7 +752,7 @@ def entry():
     p_flash.set_defaults(func=act_flash)
     p_flash.add_argument("sdb", action="store",help="The storm drop binary to flash")
 
-    p_pack = sp.add_parser("pack")
+    p_pack = sp.add_parser("pack", help="Create a Storm Drop Binary file (SDB)")
     p_pack.set_defaults(func=act_pack)
     p_pack.add_argument("elf", action="store",help="The ELF file")
     p_pack.add_argument("-m","--maintainer",action="store")
@@ -628,6 +793,7 @@ def entry():
     p_tail = sp.add_parser("tail")
     p_tail.set_defaults(func=act_tail)
     p_tail.add_argument("-n","--noreset", action="store_true" ,help="don't reset the device")
+    p_tail.add_argument("-i","--interactive", action="store_true", help="attach stdin to device")
 
     p_factoryinit = sp.add_parser("factoryinit")
     p_factoryinit.set_defaults(func=act_factoryinit)
@@ -636,6 +802,10 @@ def entry():
     p_delta.set_defaults(func=act_delta)
     p_delta.add_argument("oldimg", help="the sdb file that was last used to program the device")
     p_delta.add_argument("newimg", help="the new sdb file to program")
+
+    p_payload = sp.add_parser("program", help="program an ELF to the payload section")
+    p_payload.set_defaults(func=act_program_kernel_payload)
+    p_payload.add_argument("elf", action="store", help="The payload ELF to program")
 
     p_trace = sp.add_parser("trace")
     p_trace.set_defaults(func=act_trace)
