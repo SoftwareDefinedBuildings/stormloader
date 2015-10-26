@@ -737,6 +737,66 @@ def act_cloudflash(args):
             print "Fatal error:", e
             sys.exit(1)
 
+
+
+def act_borderconfig(args):
+
+    def _pack_ipv4_addr(addr):
+        """packs IPv4 address e.g. 10.4.10.1 into a stringified uint32"""
+        return bytearray(map(int, addr.split(".")))
+
+    if args.sample:
+        print """[main]
+mesh-ip6-prefix=2001:470:4112:2::
+remote-tunnel-addr=10.4.10.3
+local-tunnel-addr=10.4.10.2
+local-netmask=255.255.255.0
+local-gateway-addr=10.4.10.1
+"""
+        sys.exit(0)
+
+    # setup to write values
+    sl = sl_api.StormLoader(args.tty)
+    sl.enter_bootload_mode()
+    if args.config:
+        if args.verbose:
+            print "Loading config from", args.config
+        from ConfigParser import SafeConfigParser
+        cparser = SafeConfigParser()
+        cparser.read(args.config)
+        args.mesh_ip6_prefix = cparser.get('main', 'mesh-ip6-prefix')
+        args.remote_tunnel_addr = cparser.get('main', 'remote-tunnel-addr')
+        args.local_tunnel_addr = cparser.get('main', 'local-tunnel-addr')
+        args.local_netmask = cparser.get('main', 'local-netmask')
+        args.local_gateway_addr = cparser.get('main', 'local-gateway-addr')
+
+    if args.verbose:
+        print "Loading attributes"
+    # load prefix unaltered
+    sl.c_sattr(2, "meshpfx", args.mesh_ip6_prefix)
+    sl.c_sattr(3, "remtun", _pack_ipv4_addr(args.remote_tunnel_addr))
+    sl.c_sattr(4, "loctun",  _pack_ipv4_addr(args.local_tunnel_addr))
+    sl.c_sattr(5, "locmask", _pack_ipv4_addr(args.local_netmask))
+    sl.c_sattr(6, "locgate", _pack_ipv4_addr(args.local_gateway_addr))
+    if args.verbose:
+        print "Attributes loaded. Resetting..."
+    sl.enter_payload_mode()
+
+def act_moteconfig(args):
+    # setup to write values
+    sl = sl_api.StormLoader(args.tty)
+    sl.enter_bootload_mode()
+    if args.verbose:
+        print "Loading [meshpfx] =", args.prefix
+    sl.c_sattr(2, "meshpfx", args.prefix)
+
+    router = "fe80::212:6d02:0:"+args.router
+    if args.verbose:
+        print "Loading [router addr] =",router
+    sl.c_sattr(7, "border", router)
+    sl.enter_payload_mode()
+
+
 def entry():
     parser = argparse.ArgumentParser(description="StormLoader tool")
     parser.add_argument("-D","--tty",action="store",default="/dev/ttyUSB0")
@@ -837,6 +897,29 @@ def entry():
     p_cloudflash = sp.add_parser("cloudflash")
     p_cloudflash.set_defaults(func=act_cloudflash)
     p_cloudflash.add_argument("image", action="store")
+
+    p_borderconfig = sp.add_parser("borderconfig", help="Configures the border router with these settings, then restarts")
+    p_borderconfig.set_defaults(func=act_borderconfig)
+    p_borderconfig.add_argument("-mesh-ip6-prefix", default="", action="store",
+        help="IPv6 /64 prefix of the mesh network for this border router, e.g. 2001:470:1234:2::")
+    p_borderconfig.add_argument("-remote-tunnel-addr", default="", action="store",
+        help="IPv4 address of the remote tunnel, e.g. 10.4.10.33")
+    p_borderconfig.add_argument("-local-tunnel-addr", default="", action="store",
+        help="IPv4 address of the local tunnel (the border router's address), e.g. 10.4.10.31")
+    p_borderconfig.add_argument("-local-netmask", default="", action="store",
+        help="Netmask of the border router's ipv4 network, e.g. 255.255.255.0")
+    p_borderconfig.add_argument("-local-gateway-addr", default="", action="store",
+        help="IPv4 address of the local gateway for the border router's ipv4 network, e.g. 10.4.10.1")
+    p_borderconfig.add_argument("-config", action="store", default=None, help="path to the .ini config file with key=val of the command line options for border config")
+    p_borderconfig.add_argument("-sample", action="store_true", default=False, help="Output a sample configuration file to stdout. Config is used for 'sload borderconfig -c <configfile.ini>'")
+
+    p_moteconfig = sp.add_parser("moteconfig", help="Configure networking for a non-border mote")
+    p_moteconfig.set_defaults(func=act_moteconfig)
+    p_moteconfig.add_argument("prefix", default=None, action="store",
+        help="IPv6 /64 prefix of the mesh network for this mote, e.g. 2001:470:1234:2::")
+    p_moteconfig.add_argument("router", default=None, action="store",
+        help="NodeID of the border router for this mote in a one-hop network, e.g. f00d")
+
 
     args = parser.parse_args()
     args.func(args)
