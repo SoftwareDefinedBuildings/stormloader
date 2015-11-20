@@ -10,7 +10,7 @@ import pylibftdi
 pylibftdi.USB_PID_LIST.append(0x6015)
 from pylibftdi._base import FtdiError
 
-# TODO come up with a resync that does not inject a 00 into the stream if we were in 
+# TODO come up with a resync that does not inject a 00 into the stream if we were in
 # escape mode. Do this by replacing the serial write with something that logs what the
 # last sent byte was.
 
@@ -35,6 +35,7 @@ CMD_CRCEF     = "\x16"
 CMD_XEPAGE    = "\x17"
 CMD_XFINIT    = "\x18"
 CMD_CLKOUT    = "\x19"
+CMD_WUSER     = "\x20"
 
 RES_OVERFLOW  = "\x10"
 RES_PONG      = "\x11"
@@ -252,6 +253,14 @@ class StormLoader(object):
         if rv != RES_OK:
             raise BadnessException()
 
+    def c_wuser(self, contents):
+        assert len(contents) == 8
+        if isinstance(contents, list):
+            contents = "".join([chr(x) for x in contents])
+        rv, _ = self.do_cmd(contents, CMD_WUSER, 0)
+        if rv != RES_OK:
+            raise BadnessException()
+            
     def c_clkout(self):
         rv = self.do_cmd("", CMD_CLKOUT, 0)
 
@@ -444,7 +453,7 @@ class StormLoader(object):
     def set_blmodepin(self, v):
         self._ser_serialmode()
         self.dev.rts = 1 if v else 0 #True is 1 is low
-       
+
     def enter_bootload_mode(self):
         self.set_reset(True)
         self.set_blmodepin(True)
@@ -459,14 +468,10 @@ class StormLoader(object):
                 pass
         else:
             raise CommsTimeoutException("Could not enter bootload mode")
-            
+
     def enter_payload_mode(self):
         self.set_reset(True)
         self.set_blmodepin(False)
         time.sleep(0.01)
         self.dev.flush()
         self.set_reset(False)
-            
-
-
-

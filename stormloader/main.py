@@ -740,12 +740,12 @@ def act_cloudflash(args):
 
 
 def act_borderconfig(args):
-
+    args = loadconfigs(args, "borderconfig")
     def _pack_ipv4_addr(addr):
         """packs IPv4 address e.g. 10.4.10.1 into a stringified uint32"""
         return bytearray(map(int, addr.split(".")))
 
-    if args.sample:
+    if args["sample"]:
         print """[main]
 mesh-ip6-prefix=2001:470:4112:2::
 remote-tunnel-addr=10.4.10.3
@@ -756,46 +756,58 @@ local-gateway-addr=10.4.10.1
         sys.exit(0)
 
     # setup to write values
-    sl = sl_api.StormLoader(args.tty)
+    sl = sl_api.StormLoader(args["tty"])
     sl.enter_bootload_mode()
-    if args.config:
-        if args.verbose:
-            print "Loading config from", args.config
+    if args["config"]:
+        if args["verbose"]:
+            print "Loading config from", args["config"]
         from ConfigParser import SafeConfigParser
         cparser = SafeConfigParser()
-        cparser.read(args.config)
-        args.mesh_ip6_prefix = cparser.get('main', 'mesh-ip6-prefix')
-        args.remote_tunnel_addr = cparser.get('main', 'remote-tunnel-addr')
-        args.local_tunnel_addr = cparser.get('main', 'local-tunnel-addr')
-        args.local_netmask = cparser.get('main', 'local-netmask')
-        args.local_gateway_addr = cparser.get('main', 'local-gateway-addr')
+        cparser.read(args["config"])
+        args["mesh_ip6_prefix"] = cparser.get('main', 'mesh-ip6-prefix')
+        args["remote_tunnel_addr"] = cparser.get('main', 'remote-tunnel-addr')
+        args["local_tunnel_addr"] = cparser.get('main', 'local-tunnel-addr')
+        args["local_netmask"] = cparser.get('main', 'local-netmask')
+        args["local_gateway_addr"] = cparser.get('main', 'local-gateway-addr')
 
-    if args.verbose:
+    if args["verbose"]:
         print "Loading attributes"
     # load prefix unaltered
-    sl.c_sattr(2, "meshpfx", args.mesh_ip6_prefix)
-    sl.c_sattr(3, "remtun", _pack_ipv4_addr(args.remote_tunnel_addr))
-    sl.c_sattr(4, "loctun",  _pack_ipv4_addr(args.local_tunnel_addr))
-    sl.c_sattr(5, "locmask", _pack_ipv4_addr(args.local_netmask))
-    sl.c_sattr(6, "locgate", _pack_ipv4_addr(args.local_gateway_addr))
-    if args.verbose:
+    sl.c_sattr(2, "meshpfx", args["mesh_ip6_prefix"])
+    sl.c_sattr(3, "remtun", _pack_ipv4_addr(args["remote_tunnel_addr"]))
+    sl.c_sattr(4, "loctun",  _pack_ipv4_addr(args["local_tunnel_addr"]))
+    sl.c_sattr(5, "locmask", _pack_ipv4_addr(args["local_netmask"]))
+    sl.c_sattr(6, "locgate", _pack_ipv4_addr(args["local_gateway_addr"]))
+    if args["verbose"]:
         print "Attributes loaded. Resetting..."
     sl.enter_payload_mode()
 
 def act_moteconfig(args):
+    args = loadconfigs(args, "moteconfig")
     # setup to write values
-    sl = sl_api.StormLoader(args.tty)
+    sl = sl_api.StormLoader(args["tty"])
     sl.enter_bootload_mode()
-    if args.verbose:
-        print "Loading [meshpfx] =", args.prefix
-    sl.c_sattr(2, "meshpfx", args.prefix)
+    if args["verbose"]:
+        print "Loading [meshpfx] =", args["prefix"]
+    sl.c_sattr(2, "meshpfx", args["prefix"])
 
-    router = "fe80::212:6d02:0:"+args.router
-    if args.verbose:
+    router = "fe80::212:6d02:0:"+args["router"]
+    if args["verbose"]:
         print "Loading [router addr] =",router
     sl.c_sattr(7, "border", router)
     sl.enter_payload_mode()
 
+def act_burnfuses(args):
+    args = loadconfigs(args, "burnfuses")
+    sl = sl_api.StormLoader(args["tty"])
+    sl.enter_bootload_mode()
+    val = 0x00000000
+    if not args["wdt"]:
+        val |= 1
+    if args["bor"]:
+        val |= 0x580 | (36 << 1) #BOR at 2.77 volts (20%)
+    sl.c_wuser([val & 0xFF, (val >> 8) & 0xFF, (val >> 16) & 0xFF, 0, 0, 0, 0, 0])
+    sl.enter_payload_mode()
 
 def entry():
     parser = argparse.ArgumentParser(description="StormLoader tool")
@@ -920,10 +932,13 @@ def entry():
     p_moteconfig.add_argument("router", default=None, action="store",
         help="NodeID of the border router for this mote in a one-hop network, e.g. f00d")
 
+    p_burnfuses = sp.add_parser("burnfuses", help="Burn the fuses")
+    p_burnfuses.set_defaults(func=act_burnfuses)
+    p_burnfuses.add_argument("-w","--wdt", action="store_true", default=False, help="Enable the WDT by default on startup (default false)")
+    p_burnfuses.add_argument("-b","--bor", action="store_true", default=False, help="Enable the 3.3V BOR (default false)")
 
     args = parser.parse_args()
     args.func(args)
 
 if __name__ == "__main__":
     entry()
-

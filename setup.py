@@ -2,7 +2,7 @@ from setuptools import setup
 setup(
   name = 'stormloader',
   packages = ['stormloader'],
-  version = '1.5.2',
+  version = '1.7.0',
   description = 'A utility for interacting with the Storm mote',
   author = 'Michael P Andersen',
   author_email = 'm.andersen@cs.berkeley.edu',
