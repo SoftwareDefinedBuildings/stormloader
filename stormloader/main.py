@@ -922,7 +922,7 @@ def entry():
         help="Netmask of the border router's ipv4 network, e.g. 255.255.255.0")
     p_borderconfig.add_argument("-local-gateway-addr", default="", action="store",
         help="IPv4 address of the local gateway for the border router's ipv4 network, e.g. 10.4.10.1")
-    p_borderconfig.add_argument("-config", action="store", default=None, help="path to the .ini config file with key=val of the command line options for border config")
+    p_borderconfig.add_argument("-configfile", action="store", default=None, help="path to the .ini config file with key=val of the command line options for border config")
     p_borderconfig.add_argument("-sample", action="store_true", default=False, help="Output a sample configuration file to stdout. Config is used for 'sload borderconfig -c <configfile.ini>'")
 
     p_moteconfig = sp.add_parser("moteconfig", help="Configure networking for a non-border mote")
