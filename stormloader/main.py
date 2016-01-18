@@ -487,6 +487,43 @@ def act_flash_assets(args):
         print "Fatal error:", e
         sys.exit(1)
 
+def act_tailall(args):
+    devices = sl_api.StormLoader.list_devices()
+    print "Found: ", " ".join(devices)
+    args = loadconfigs(args, "tail")
+    devices_sl = [sl_api.StormLoader(args.get("tty", None), device_id=dev) for dev in devices]
+    io = args.get("interactive", False)
+    if not args["noreset"]:
+        for sl in devices_sl:
+            sl.enter_payload_mode()
+    print "[SLOADER] Attached to", " ".join(devices)
+    device_buffers = {devid: "" for devid in devices}
+    try:
+        while True:
+            for sl in devices_sl:
+                sep = '\n\033[95m['+sl.device_id+']\033[0m  ' if args["prefix"] else '\n'
+                c = sl.raw_read_noblock_buffer()
+                if len(c) > 0:
+                    alllines = c.split('\n')
+                    toprint = sep.join(alllines[:-1]) # all but last
+                    leftover = alllines[-1]
+                    sys.stdout.flush()
+                    sys.stdout.write(sep + device_buffers[sl.device_id] + toprint)
+                    device_buffers[sl.device_id] = leftover
+                    sys.stdout.flush()
+                if io:
+                    try:
+                        input = sys.stdin.read()
+                        if len(input) > 0:
+                            for sl in devices_sl:
+                                sl.raw_write(input)
+                    except IOError:
+                        pass
+
+
+    except KeyboardInterrupt:
+        sys.exit(0)
+
 def act_tail(args):
     args = loadconfigs(args, "tail")
     sl = sl_api.StormLoader(args.get("tty", None))
@@ -886,6 +923,12 @@ def entry():
     p_tail.set_defaults(func=act_tail)
     p_tail.add_argument("-n","--noreset", action="store_true" ,help="don't reset the device")
     p_tail.add_argument("-i","--interactive", action="store_true", help="attach stdin to device")
+
+    p_tailall = sp.add_parser("tailall")
+    p_tailall.set_defaults(func=act_tailall)
+    p_tailall.add_argument("-n","--noreset", action="store_true" ,help="don't reset the device")
+    p_tailall.add_argument("-i","--interactive", action="store_true", help="attach stdin to device")
+    p_tailall.add_argument("-p","--prefix", action="store_true", help="Prefix all lines of output with the node's identifier")
 
     p_factoryinit = sp.add_parser("factoryinit")
     p_factoryinit.set_defaults(func=act_factoryinit)
