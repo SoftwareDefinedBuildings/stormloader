@@ -169,10 +169,18 @@ def act_trace(args):
             print "Trying again in 5s"
             time.sleep(5)
 
-def act_flash(args):
+def act_flashall(args):
+    devices = sl_api.StormLoader.list_devices()
+    print "Found: ", " ".join(devices)
+    for dev in devices:
+        print ">>> Programming: "+dev
+        act_flash(args, ftdi_device_id=dev)
+        print
+
+def act_flash(args, ftdi_device_id=None):
     try:
         args = loadconfigs(args, "flash")
-        sl = sl_api.StormLoader(args.get("tty", None))
+        sl = sl_api.StormLoader(args.get("tty", None), device_id=ftdi_device_id)
         sl.enter_bootload_mode()
         then = time.time()
         cell = SLCell.load(args["sdb"])
@@ -300,7 +308,15 @@ def act_clkout(args):
     sl.enter_bootload_mode()
     sl.c_clkout()
 
-def act_program_kernel_payload(args):
+def act_programall_kernel_payload(args):
+    devices = sl_api.StormLoader.list_devices()
+    print "Found: ", " ".join(devices)
+    for dev in devices:
+        print ">>> Programming: "+dev
+        act_program_kernel_payload(args, ftdi_device_id=dev)
+        print
+
+def act_program_kernel_payload(args, ftdi_device_id=None):
     try:
         eximage = open(".cached_payload","r").read()
     except:
@@ -319,7 +335,7 @@ def act_program_kernel_payload(args):
         cell = SLCell.generate(params, args["elf"])
         img = cell.get_raw_image()[0x40000:] #was 0x4...
 
-        sl = sl_api.StormLoader(args.get("tty", None))
+        sl = sl_api.StormLoader(args.get("tty", None), device_id=ftdi_device_id)
         sl.enter_bootload_mode()
         print "Probing payload ELF for entry point..."
         _start = cell.locate_symbol("_start")
@@ -824,6 +840,10 @@ def entry():
     p_flash.set_defaults(func=act_flash)
     p_flash.add_argument("sdb", action="store",help="The storm drop binary to flash")
 
+    p_flashall = sp.add_parser("flashall", help="Flashes ALL attached motes matching USB PIDs 0x60{01,14,15}")
+    p_flashall.set_defaults(func=act_flashall)
+    p_flashall.add_argument("sdb", action="store",help="The storm drop binary to flash")
+
     p_pack = sp.add_parser("pack", help="Create a Storm Drop Binary file (SDB)")
     p_pack.set_defaults(func=act_pack)
     p_pack.add_argument("elf", action="store",help="The ELF file")
@@ -878,6 +898,10 @@ def entry():
     p_payload = sp.add_parser("program", help="program an ELF to the payload section")
     p_payload.set_defaults(func=act_program_kernel_payload)
     p_payload.add_argument("elf", action="store", help="The payload ELF to program")
+
+    p_payloadall = sp.add_parser("programall", help="Programs ALL attached motes matching USB PIDs 0x60{01,14,15}")
+    p_payloadall.set_defaults(func=act_programall_kernel_payload)
+    p_payloadall.add_argument("elf", action="store", help="The payload ELF to program")
 
     p_trace = sp.add_parser("trace")
     p_trace.set_defaults(func=act_trace)
