@@ -101,18 +101,29 @@ class StormLoader(object):
     XFLASH_FLOOR   = 524288
     XFLASH_CEILING = 8388607
 
-    def __init__(self, device=None):
+    def __init__(self, device=None, device_id=None):
         self.devid = device
         self.serial_mode = None
         self.dev = None
-        self.dev = pylibftdi.serial_device.SerialDevice() #TODO fix device id
+        if device_id is not None:
+            self.device_id = device_id
+            self.dev = pylibftdi.serial_device.SerialDevice(self.device_id)
+        else:
+            self.dev = pylibftdi.serial_device.SerialDevice() #TODO fix device id
         self.dev.baudrate = 117200
         self.crcfunc = crcmod.mkCrcFun(0x104c11db7, initCrc=0, xorOut=0xFFFFFFFF)
+
+    @classmethod
+    def list_devices(self):
+        return map(lambda x: x[2], pylibftdi.Driver().list_devices())
 
     def _ser_serialmode(self):
         return
         if self.serial_mode != "serial":
-            self.dev = pylibftdi.serial_device.SerialDevice() #TODO fix device id
+            if self.device_id is not None:
+                self.dev = pylibftdi.serial_device.SerialDevice(self.device_id)
+            else:
+                self.dev = pylibftdi.serial_device.SerialDevice() #TODO fix device id
             self.dev.baudrate = 117200
             self.serial_mode = "serial"
 

@@ -169,10 +169,18 @@ def act_trace(args):
             print "Trying again in 5s"
             time.sleep(5)
 
-def act_flash(args):
+def act_flashall(args):
+    devices = sl_api.StormLoader.list_devices()
+    print "Found: ", " ".join(devices)
+    for dev in devices:
+        print ">>> Programming: "+dev
+        act_flash(args, ftdi_device_id=dev)
+        print
+
+def act_flash(args, ftdi_device_id=None):
     try:
         args = loadconfigs(args, "flash")
-        sl = sl_api.StormLoader(args.get("tty", None))
+        sl = sl_api.StormLoader(args.get("tty", None), device_id=ftdi_device_id)
         sl.enter_bootload_mode()
         then = time.time()
         cell = SLCell.load(args["sdb"])
@@ -300,7 +308,15 @@ def act_clkout(args):
     sl.enter_bootload_mode()
     sl.c_clkout()
 
-def act_program_kernel_payload(args):
+def act_programall_kernel_payload(args):
+    devices = sl_api.StormLoader.list_devices()
+    print "Found: ", " ".join(devices)
+    for dev in devices:
+        print ">>> Programming: "+dev
+        act_program_kernel_payload(args, ftdi_device_id=dev)
+        print
+
+def act_program_kernel_payload(args, ftdi_device_id=None):
     try:
         eximage = open(".cached_payload","r").read()
     except:
@@ -319,7 +335,7 @@ def act_program_kernel_payload(args):
         cell = SLCell.generate(params, args["elf"])
         img = cell.get_raw_image()[0x40000:] #was 0x4...
 
-        sl = sl_api.StormLoader(args.get("tty", None))
+        sl = sl_api.StormLoader(args.get("tty", None), device_id=ftdi_device_id)
         sl.enter_bootload_mode()
         print "Probing payload ELF for entry point..."
         _start = cell.locate_symbol("_start")
@@ -470,6 +486,43 @@ def act_flash_assets(args):
     except sl_api.StormloaderException as e:
         print "Fatal error:", e
         sys.exit(1)
+
+def act_tailall(args):
+    devices = sl_api.StormLoader.list_devices()
+    print "Found: ", " ".join(devices)
+    args = loadconfigs(args, "tail")
+    devices_sl = [sl_api.StormLoader(args.get("tty", None), device_id=dev) for dev in devices]
+    io = args.get("interactive", False)
+    if not args["noreset"]:
+        for sl in devices_sl:
+            sl.enter_payload_mode()
+    print "[SLOADER] Attached to", " ".join(devices)
+    device_buffers = {devid: "" for devid in devices}
+    try:
+        while True:
+            for sl in devices_sl:
+                sep = '\n\033[95m['+sl.device_id+']\033[0m  ' if args["prefix"] else '\n'
+                c = sl.raw_read_noblock_buffer()
+                if len(c) > 0:
+                    alllines = c.split('\n')
+                    toprint = sep.join(alllines[:-1]) # all but last
+                    leftover = alllines[-1]
+                    sys.stdout.flush()
+                    sys.stdout.write(sep + device_buffers[sl.device_id] + toprint)
+                    device_buffers[sl.device_id] = leftover
+                    sys.stdout.flush()
+                if io:
+                    try:
+                        input = sys.stdin.read()
+                        if len(input) > 0:
+                            for sl in devices_sl:
+                                sl.raw_write(input)
+                    except IOError:
+                        pass
+
+
+    except KeyboardInterrupt:
+        sys.exit(0)
 
 def act_tail(args):
     args = loadconfigs(args, "tail")
@@ -824,6 +877,10 @@ def entry():
     p_flash.set_defaults(func=act_flash)
     p_flash.add_argument("sdb", action="store",help="The storm drop binary to flash")
 
+    p_flashall = sp.add_parser("flashall", help="Flashes ALL attached motes matching USB PIDs 0x60{01,14,15}")
+    p_flashall.set_defaults(func=act_flashall)
+    p_flashall.add_argument("sdb", action="store",help="The storm drop binary to flash")
+
     p_pack = sp.add_parser("pack", help="Create a Storm Drop Binary file (SDB)")
     p_pack.set_defaults(func=act_pack)
     p_pack.add_argument("elf", action="store",help="The ELF file")
@@ -867,6 +924,12 @@ def entry():
     p_tail.add_argument("-n","--noreset", action="store_true" ,help="don't reset the device")
     p_tail.add_argument("-i","--interactive", action="store_true", help="attach stdin to device")
 
+    p_tailall = sp.add_parser("tailall")
+    p_tailall.set_defaults(func=act_tailall)
+    p_tailall.add_argument("-n","--noreset", action="store_true" ,help="don't reset the device")
+    p_tailall.add_argument("-i","--interactive", action="store_true", help="attach stdin to device")
+    p_tailall.add_argument("-p","--prefix", action="store_true", help="Prefix all lines of output with the node's identifier")
+
     p_factoryinit = sp.add_parser("factoryinit")
     p_factoryinit.set_defaults(func=act_factoryinit)
 
@@ -878,6 +941,10 @@ def entry():
     p_payload = sp.add_parser("program", help="program an ELF to the payload section")
     p_payload.set_defaults(func=act_program_kernel_payload)
     p_payload.add_argument("elf", action="store", help="The payload ELF to program")
+
+    p_payloadall = sp.add_parser("programall", help="Programs ALL attached motes matching USB PIDs 0x60{01,14,15}")
+    p_payloadall.set_defaults(func=act_programall_kernel_payload)
+    p_payloadall.add_argument("elf", action="store", help="The payload ELF to program")
 
     p_trace = sp.add_parser("trace")
     p_trace.set_defaults(func=act_trace)
