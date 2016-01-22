@@ -201,9 +201,19 @@ def act_flash(args, ftdi_device_id=None):
         print "Fatal error:", e
         sys.exit(1)
 
-def act_delta(args):
+def act_deltaall(args):
+    devices = sl_api.StormLoader.list_devices()
+    print "Found: ", " ".join(devices)
+    _args = loadconfigs(args, "flashdelta")
+    map_ftdi_to_nodeid(devices, _args.get("tty", None))
+    for dev in devices:
+        print ">>> Programming: "+dev
+        act_delta(args, ftdi_device_id=dev)
+        print
+
+def act_delta(args, ftdi_device_id=None):
     args = loadconfigs(args, "flashdelta")
-    sl = sl_api.StormLoader(args.get("tty", None))
+    sl = sl_api.StormLoader(args.get("tty", None), device_id=ftdi_device_id)
     sl.enter_bootload_mode()
 
     newcell = SLCell.load(args["newimg"])
@@ -937,6 +947,11 @@ def entry():
     p_delta.set_defaults(func=act_delta)
     p_delta.add_argument("oldimg", help="the sdb file that was last used to program the device")
     p_delta.add_argument("newimg", help="the new sdb file to program")
+
+    p_deltaall = sp.add_parser("flashalldelta")
+    p_deltaall.set_defaults(func=act_deltaall)
+    p_deltaall.add_argument("oldimg", help="the sdb file that was last used to program the device")
+    p_deltaall.add_argument("newimg", help="the new sdb file to program")
 
     p_payload = sp.add_parser("program", help="program an ELF to the payload section")
     p_payload.set_defaults(func=act_program_kernel_payload)
