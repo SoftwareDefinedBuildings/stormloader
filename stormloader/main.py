@@ -848,12 +848,12 @@ local-gateway-addr=10.4.10.1
     # setup to write values
     sl = sl_api.StormLoader(args["tty"])
     sl.enter_bootload_mode()
-    if args["config"]:
+    if args["configfile"]:
         if args["verbose"]:
-            print "Loading config from", args["config"]
+            print "Loading config from", args["configfile"]
         from ConfigParser import SafeConfigParser
         cparser = SafeConfigParser()
-        cparser.read(args["config"])
+        cparser.read(args["configfile"])
         args["mesh_ip6_prefix"] = cparser.get('main', 'mesh-ip6-prefix')
         args["remote_tunnel_addr"] = cparser.get('main', 'remote-tunnel-addr')
         args["local_tunnel_addr"] = cparser.get('main', 'local-tunnel-addr')
