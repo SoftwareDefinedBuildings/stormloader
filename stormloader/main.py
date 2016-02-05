@@ -345,8 +345,9 @@ def act_programall_kernel_payload(args):
         print
 
 def act_program_kernel_payload(args, ftdi_device_id=None):
+    cache_file = '.cached_payload' if ftdi_device_id is None else '.cached_payload_{0}'.format(ftdi_device_id)
     try:
-        eximage = open(".cached_payload","r").read()
+        eximage = open(cache_file,"r").read()
     except:
         eximage = None
     try:
@@ -468,7 +469,7 @@ def act_program_kernel_payload(args, ftdi_device_id=None):
         else:
             print "No cached contents (this will take longer)"
             wfull()
-        with open(".cached_payload","w") as f:
+        with open(cache_file,"w") as f:
             f.write(img)
 
         sl.enter_payload_mode()
