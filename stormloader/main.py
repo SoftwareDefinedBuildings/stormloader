@@ -71,6 +71,20 @@ def loadconfigs(args, subsect):
 
     return args
 
+def map_ftdi_to_nodeid(devices, tty):
+    mapping = {}
+    for dev in devices:
+        sl = sl_api.StormLoader(tty, device_id=dev)
+        sl.enter_bootload_mode()
+        mapping[dev] = "".join("{:02x}".format(kk) for kk in sl.c_gattr(0, True)[1])
+    try:
+        home = os.path.expanduser("~")
+        dumpfile = open(os.path.join(home,".sload_nodeids"), 'w')
+        json.dump(mapping, dumpfile)
+    except IOError as e:
+        print "Unable to save nodeids ({0})".format(e)
+    return mapping
+
 def act_ping(args):
     args = loadconfigs(args, "ping")
     sl = sl_api.StormLoader(args.get("tty", None))
@@ -172,6 +186,8 @@ def act_trace(args):
 def act_flashall(args):
     devices = sl_api.StormLoader.list_devices()
     print "Found: ", " ".join(devices)
+    _args = loadconfigs(args, "flash")
+    map_ftdi_to_nodeid(devices, _args.get("tty", None))
     for dev in devices:
         print ">>> Programming: "+dev
         act_flash(args, ftdi_device_id=dev)
@@ -201,9 +217,19 @@ def act_flash(args, ftdi_device_id=None):
         print "Fatal error:", e
         sys.exit(1)
 
-def act_delta(args):
+def act_deltaall(args):
+    devices = sl_api.StormLoader.list_devices()
+    print "Found: ", " ".join(devices)
+    _args = loadconfigs(args, "flashdelta")
+    map_ftdi_to_nodeid(devices, _args.get("tty", None))
+    for dev in devices:
+        print ">>> Programming: "+dev
+        act_delta(args, ftdi_device_id=dev)
+        print
+
+def act_delta(args, ftdi_device_id=None):
     args = loadconfigs(args, "flashdelta")
-    sl = sl_api.StormLoader(args.get("tty", None))
+    sl = sl_api.StormLoader(args.get("tty", None), device_id=ftdi_device_id)
     sl.enter_bootload_mode()
 
     newcell = SLCell.load(args["newimg"])
@@ -310,6 +336,8 @@ def act_clkout(args):
 
 def act_programall_kernel_payload(args):
     devices = sl_api.StormLoader.list_devices()
+    _args = loadconfigs(args, "program")
+    map_ftdi_to_nodeid(devices, _args.get("tty", None))
     print "Found: ", " ".join(devices)
     for dev in devices:
         print ">>> Programming: "+dev
@@ -317,8 +345,9 @@ def act_programall_kernel_payload(args):
         print
 
 def act_program_kernel_payload(args, ftdi_device_id=None):
+    cache_file = '.cached_payload' if ftdi_device_id is None else '.cached_payload_{0}'.format(ftdi_device_id)
     try:
-        eximage = open(".cached_payload","r").read()
+        eximage = open(cache_file,"r").read()
     except:
         eximage = None
     try:
@@ -440,7 +469,7 @@ def act_program_kernel_payload(args, ftdi_device_id=None):
         else:
             print "No cached contents (this will take longer)"
             wfull()
-        with open(".cached_payload","w") as f:
+        with open(cache_file,"w") as f:
             f.write(img)
 
         sl.enter_payload_mode()
@@ -498,10 +527,19 @@ def act_tailall(args):
             sl.enter_payload_mode()
     print "[SLOADER] Attached to", " ".join(devices)
     device_buffers = {devid: "" for devid in devices}
+    device_names = {devid: devid for devid in devices}
+    # get the nodeids if we've saved them
+    try:
+        home = os.path.expanduser("~")
+        dumpfile = open(os.path.join(home,".sload_nodeids"), 'r')
+        for devid, nodeid in json.load(dumpfile).iteritems():
+            device_names[devid] = nodeid
+    except IOError as e:
+        print "Unable to load nodeids ({0})".format(e)
     try:
         while True:
             for sl in devices_sl:
-                sep = '\n\033[95m['+sl.device_id+']\033[0m  ' if args["prefix"] else '\n'
+                sep = '\n\033[95m['+device_names[sl.device_id]+']\033[0m  ' if args["prefix"] else '\n'
                 c = sl.raw_read_noblock_buffer()
                 if len(c) > 0:
                     alllines = c.split('\n')
@@ -811,12 +849,12 @@ local-gateway-addr=10.4.10.1
     # setup to write values
     sl = sl_api.StormLoader(args["tty"])
     sl.enter_bootload_mode()
-    if args["config"]:
+    if args["configfile"]:
         if args["verbose"]:
-            print "Loading config from", args["config"]
+            print "Loading config from", args["configfile"]
         from ConfigParser import SafeConfigParser
         cparser = SafeConfigParser()
-        cparser.read(args["config"])
+        cparser.read(args["configfile"])
         args["mesh_ip6_prefix"] = cparser.get('main', 'mesh-ip6-prefix')
         args["remote_tunnel_addr"] = cparser.get('main', 'remote-tunnel-addr')
         args["local_tunnel_addr"] = cparser.get('main', 'local-tunnel-addr')
@@ -937,6 +975,11 @@ def entry():
     p_delta.set_defaults(func=act_delta)
     p_delta.add_argument("oldimg", help="the sdb file that was last used to program the device")
     p_delta.add_argument("newimg", help="the new sdb file to program")
+
+    p_deltaall = sp.add_parser("flashalldelta")
+    p_deltaall.set_defaults(func=act_deltaall)
+    p_deltaall.add_argument("oldimg", help="the sdb file that was last used to program the device")
+    p_deltaall.add_argument("newimg", help="the new sdb file to program")
 
     p_payload = sp.add_parser("program", help="program an ELF to the payload section")
     p_payload.set_defaults(func=act_program_kernel_payload)
